@@ -102,8 +102,16 @@ async function phoneFor(name) {
   return p.phoneNumbers[0].value;
 }
 
+// Links are handed back to the Shortcut ("Open URLs" there doesn't show Safari's "Open in app?" prompt).
+// Run directly from Scriptable (no Shortcut), fall back to Safari.
+let linkForShortcut = "";
+const fromShortcutRun = () => !!(args.plainTexts && args.plainTexts.length);  // the Shortcut passed the dictated text
+
 async function perform(a) {
-  if (a.url) { Safari.open(a.url); return a.message || a.label || "Done"; }
+  if (a.url) {
+    if (fromShortcutRun()) linkForShortcut = a.url; else Safari.open(a.url);
+    return a.message || a.label || "Done";
+  }
   if (a.type === "timer") {
     const n = new Notification();
     n.title = "⏰ " + a.label; n.body = "Time's up."; n.sound = "alarm";
@@ -172,5 +180,5 @@ try { result = await main(); } catch (e) { result = "⚠️ " + e.message; }
 const done = new Notification();
 done.title = "VoiceAgent"; done.body = result;
 await done.schedule();
-Script.setShortcutOutput(result);
+Script.setShortcutOutput(linkForShortcut);   // the Shortcut opens this (empty = nothing to open)
 Script.complete();
