@@ -143,19 +143,23 @@ async function getKey(force) {
   return k;
 }
 
+// Normally the Shortcut's "Dictate Text" passes the words in. Scriptable's own Dictation can hang
+// on newer iOS, so it gets 15 s before falling back to typing.
 async function listen() {
-  try { return (await Dictation.start()).trim(); }
-  catch (e) {                     // dictation unavailable: let the user type instead
-    const al = new Alert(); al.title = "VoiceAgent"; al.addTextField("Type a command");
-    al.addAction("Go"); al.addCancelAction("Cancel");
-    if (await al.presentAlert() === -1) return "";
-    return al.textFieldValue(0).trim();
-  }
+  try {
+    const timeout = new Promise((_, reject) => Timer.schedule(15000, false, () => reject(new Error("timeout"))));
+    const text = await Promise.race([Dictation.start(), timeout]);
+    if (text && text.trim()) return text.trim();
+  } catch (e) {}
+  const al = new Alert(); al.title = "VoiceAgent"; al.addTextField("Type a command");
+  al.addAction("Go"); al.addCancelAction("Cancel");
+  if (await al.presentAlert() === -1) return "";
+  return al.textFieldValue(0).trim();
 }
 
 async function main() {
   let key = await getKey(false);
-  const fromShortcut = args.plainTexts && args.plainTexts[0];
+  const fromShortcut = (args.plainTexts && args.plainTexts[0]) || (typeof args.shortcutParameter === "string" ? args.shortcutParameter : "");
   const command = (fromShortcut || await listen()).trim();
   if (!command) return "Didn't catch anything.";
   if (/^reset (the )?key\.?$/i.test(command)) { await getKey(true); return "API key updated."; }

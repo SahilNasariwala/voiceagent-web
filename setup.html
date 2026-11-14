@@ -162,19 +162,23 @@ async function getKey(force) {
   return k;
 }
 
+// Normally the Shortcut's "Dictate Text" passes the words in. Scriptable's own Dictation can hang
+// on newer iOS, so it gets 15 s before falling back to typing.
 async function listen() {
-  try { return (await Dictation.start()).trim(); }
-  catch (e) {                     // dictation unavailable: let the user type instead
-    const al = new Alert(); al.title = "VoiceAgent"; al.addTextField("Type a command");
-    al.addAction("Go"); al.addCancelAction("Cancel");
-    if (await al.presentAlert() === -1) return "";
-    return al.textFieldValue(0).trim();
-  }
+  try {
+    const timeout = new Promise((_, reject) =&gt; Timer.schedule(15000, false, () =&gt; reject(new Error("timeout"))));
+    const text = await Promise.race([Dictation.start(), timeout]);
+    if (text &amp;&amp; text.trim()) return text.trim();
+  } catch (e) {}
+  const al = new Alert(); al.title = "VoiceAgent"; al.addTextField("Type a command");
+  al.addAction("Go"); al.addCancelAction("Cancel");
+  if (await al.presentAlert() === -1) return "";
+  return al.textFieldValue(0).trim();
 }
 
 async function main() {
   let key = await getKey(false);
-  const fromShortcut = args.plainTexts &amp;&amp; args.plainTexts[0];
+  const fromShortcut = (args.plainTexts &amp;&amp; args.plainTexts[0]) || (typeof args.shortcutParameter === "string" ? args.shortcutParameter : "");
   const command = (fromShortcut || await listen()).trim();
   if (!command) return "Didn't catch anything.";
   if (/^reset (the )?key\.?$/i.test(command)) { await getKey(true); return "API key updated."; }
@@ -192,8 +196,11 @@ Script.complete();
 </textarea>
 <button type="button" onclick="copyCode(this)">Copy script</button></div></div>
 <div class="card step"><div class="n">3</div><div>Open Scriptable → <b>+</b> → paste → tap the title at the top and name it <code>VoiceAgent</code> → <b>Done</b>.<br>
-Tap the script once to run it: paste your Groq key (<a href="https://console.groq.com/keys">console.groq.com/keys</a>) when asked, allow the microphone and speech recognition, then say <i>“Open YouTube”</i>.</div></div>
-<div class="card step"><div class="n">4</div><div>Shortcuts app → <b>+</b> → add action <b>Run Script</b> (Scriptable) → choose <b>VoiceAgent</b> → tap ▸ and turn on <b>Run In App</b>. Name the shortcut <code>VoiceAgent</code>.</div></div>
+Tap the script once to run it: paste your Groq key (<a href="https://console.groq.com/keys">console.groq.com/keys</a>) when asked, allow the microphone and speech recognition, then (if the mic screen stays blank) type <i>Open YouTube</i> in the box that appears.</div></div>
+<div class="card step"><div class="n">4</div><div>Shortcuts app → <b>+</b> → name it <code>VoiceAgent</code>, then add two actions:<br>
+① <b>Dictate Text</b> — tap ▸, set <i>Stop Listening</i> to <b>After Pause</b>.<br>
+② <b>Run Script</b> (Scriptable) → choose <b>VoiceAgent</b> → tap ▸: turn on <b>Run In App</b>, and set <b>Texts</b> to the <b>Dictated Text</b> variable (tap Texts → Select Variable → Dictated Text).<br>
+<span class="note">Already made the one-action version? Just add Dictate Text above Run Script and set Texts as above.</span></div></div>
 <div class="card step"><div class="n">5</div><div><b>Floating button:</b> Settings → Accessibility → Touch → AssistiveTouch → On → Custom Actions → Single-Tap → <b>VoiceAgent</b>.<br>
 <span class="note">Or: Action Button → Shortcut → VoiceAgent · Back Tap → Double Tap → VoiceAgent · “Hey Siri, VoiceAgent”.</span></div></div>
 <div class="card note"><b>Try:</b> “Search YouTube for history of Rome” · “Directions to the airport” · “Set a timer for 10 minutes” ·
