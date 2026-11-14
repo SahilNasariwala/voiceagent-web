@@ -112,8 +112,10 @@
 <script>
 "use strict";
 const API = "https://api.groq.com/openai/v1";
-const DEFAULTS = { model: "llama-3.3-70b-versatile", whisper: "whisper-large-v3-turbo", autoOpen: "1" };
+const DEFAULTS = { model: "openai/gpt-oss-120b", whisper: "whisper-large-v3-turbo", autoOpen: "1" };
 const MAX_ACTIONS = 5, MAX_RECORD_MS = 60000;
+// Groq shut these down; swap a saved retired model for the current default.
+const RETIRED_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192", "qwen/qwen3.6-27b", "qwen/qwen3-32b"];
 
 // ---------- storage (best effort; page works without it) ----------
 const store = {
@@ -268,12 +270,20 @@ async function transcribe(blob, ext) {
   return text;
 }
 
+function currentModel() {
+  const m = store.get("model", DEFAULTS.model);
+  if (RETIRED_MODELS.includes(m)) { store.set("model", DEFAULTS.model); return DEFAULTS.model; }
+  return m;
+}
+
 async function think(text) {
-  const out = await groq("/chat/completions", JSON.stringify({
-    model: store.get("model", DEFAULTS.model), temperature: 0, max_completion_tokens: 512,
-    response_format: { type: "json_object" },
-    messages: [{ role: "system", content: systemPrompt() }, { role: "user", content: text }],
-  }), { "Content-Type": "application/json" });
+  const model = currentModel();
+  const body = { model, temperature: 0, max_completion_tokens: 2048,
+                 response_format: { type: "json_object" },
+                 messages: [{ role: "system", content: systemPrompt() }, { role: "user", content: text }] };
+  // Reasoning models spend completion tokens on thinking; keep it short so the JSON isn't cut off.
+  if (model.startsWith("openai/gpt-oss")) body.reasoning_effort = "low";
+  const out = await groq("/chat/completions", JSON.stringify(body), { "Content-Type": "application/json" });
   const content = out.choices?.[0]?.message?.content;
   if (!content) fail("The AI returned an empty reply.");
   return parseResponse(content);
@@ -428,7 +438,7 @@ $("clearHistory").onclick = () => { if (confirm("Delete all history?")) { store.
 // settings
 function loadSettings() {
   $("key").value = store.get("key", "");
-  $("model").value = store.get("model", DEFAULTS.model);
+  $("model").value = currentModel();
   $("whisper").value = store.get("whisper", DEFAULTS.whisper);
   $("autoOpen").value = store.get("autoOpen", DEFAULTS.autoOpen);
 }
